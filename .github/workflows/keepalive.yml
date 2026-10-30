@@ -1,0 +1,38 @@
+name: keep-alive
+
+# Render's free web services sleep after 15 min without traffic (a 30-60 s cold start).
+# Pinging /ping (no database access) every 5 min keeps the agent awake; Neon still
+# autosuspends because /ping never touches it. Public repo = free Actions minutes.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "17 6 1 * *"   # monthly: keep the repo active (GitHub pauses idle schedules after 60 days)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    if: github.event.schedule != '17 6 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping the Maine news agent
+        run: |
+          curl -fsS --retry 4 --retry-delay 15 --retry-all-errors --max-time 90 \
+            https://maine-news-agent-prod.onrender.com/ping
+          echo
+          curl -fsS -o /dev/null -w "web %{http_code}\n" --max-time 30 https://maine-news-web.vercel.app/
+
+  stay-active:
+    if: github.event.schedule == '17 6 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u +%FT%TZ > last-active.txt
+          git config user.name "keepalive-bot"
+          git config user.email "keepalive-bot@users.noreply.github.com"
+          git add last-active.txt && git commit -m "keep-alive: monthly activity" && git push
